@@ -1,0 +1,47 @@
+#!/usr/bin/env ansible-playbook
+#
+# (c) 2016 DataNexus Inc.  All Rights Reserved
+---
+# Build our nginx host group
+- name: Create nginx host group
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    # if we're using dynamic provisioning; build the host groups from the
+    # meta-data associated with the matching nodes in the selected cloud
+    - block:
+      # load the 'local variables file', if one was defined, to get any variables
+      # we might need from that file when constructing our host groups
+      - name: Load local variables file
+        include_vars:
+          file: "{{local_vars_file}}"
+        when: not (local_vars_file is undefined or local_vars_file is none or local_vars_file | trim == '')
+      # then, build our host groups
+      - include_role:
+          name: build-app-host-groups
+        vars:
+          host_group_list:
+            - name: nginx
+      when: cloud is defined and (cloud == 'aws' or cloud == 'osp')
+
+# And deploy NGINX to the nodes in the `nginx` host group; note that if
+# there is more than one node in the `nginx` host group, those nodes will be
+# configured as a Kafka cluster
+- name: Install/configure NGINX server(s)
+  hosts: nginx
+  gather_facts: no
+  vars_files:
+    - vars/nginx.yml
+  vars:
+    - combined_package_list: "{{ (default_packages|default([])) | union(nginx_package_list) | union((install_packages_by_tag|default({})).nginx|default([])) }}"
+    - nginx_nodes: "{{groups['nginx']}}"
+  pre_tasks:
+    # first, initialize the play by loading any `local_vars_file` that may have
+    # been passed in, restarting the network on the target nodes (if desired),
+    # and determining the `data_iface` and `api_iface` values from the input
+    # `iface_description_array` (if one was passed in)
+    - include_role:
+        name: initialize-play
+  # now that we have all of the facts we need, provision the input nodes
+  roles:
+    - role: provision-nodes

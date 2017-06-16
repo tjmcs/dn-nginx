@@ -1,0 +1,8 @@
+# (c) 2016 DataNexus Inc.  All Rights Reserved
+---
+- include: install-nginx.yml static=no
+- include: set-nginx-active-passive.yml static=no
+  when: ((nginx_nodes | default([])) | length) > 1
+- include: set-nginx-https-only.yml static=no
+- include: enable-nginx-service.yml static=no
+- include: start-nginx-service.yml static=no

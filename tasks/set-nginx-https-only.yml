@@ -1,0 +1,42 @@
+# (c) 2016 DataNexus Inc.  All Rights Reserved
+---
+# Setup self-signed certs for each node in our cluster, then enable
+# HTTPS connections
+- set_fact:
+    ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + data_iface), 'ipv4', 'address']) | list}}"
+    num_hosts: "{{(nginx_nodes + (existing_nodes | default([]))) | length}}"
+- block:
+  # first, ensure the directory we're storing the self-signed certs in exists
+  - name: Ensure that directory for self-signed certs exists
+    file:
+      path: "/etc/nginx/ssl"
+      state: directory
+      owner: nginx
+      group: nginx
+      mode: 0700
+  # next, create the self-signed certs for the target nodes
+  - name: Create nginx self-signed certificate
+    command: openssl req -new -nodes -x509 -subj "/C={{nginx_country}}/ST={{nginx_state}}/L={{nginx_location}}/O={{nginx_org}}/CN={{nginx_common_name | default(api_addr)}}" -days 3650 -keyout /etc/nginx/ssl/server.key -out /etc/nginx/ssl/server.crt -extensions v3_ca creates=/etc/nginx/ssl/server.crt
+  # Setup the nginx instance to only listen for HTTPS requests (all HTTP
+  # requests will be redirected as HTTPS requests)
+  - name: Use template to configure nginx to only use HTTPS
+    template:
+      src: nginx.conf.j2
+      dest: /etc/nginx/nginx.conf
+      owner: nginx
+      group: nginx
+      mode: 0644
+  # create a username/password pair to use for authentication against the
+  # active NGINX server for our two default users (the `nginx_admin_user` and
+  # the `nginx_power_user`)
+  - name: Create new random passwords for basic authentication
+    command: htpasswd -cb /etc/nginx/.htpasswd "{{nginx_admin_user}}" "{{lookup('password', 'credentials/' + nginx_admin_user + '/password.txt length=15')}}"
+  - command: htpasswd -b /etc/nginx/.htpasswd "{{nginx_power_user}}" "{{lookup('password', 'credentials/' + nginx_power_user + '/password.txt length=15')}}"
+  # and configure the nginx server to use that file for basic authentication
+  - name: Add basic authentication to the NGINX instances
+    lineinfile:
+      dest: /etc/nginx/nginx.conf
+      line: "        auth_basic \"Login\";\n        auth_basic_user_file /etc/nginx/.htpasswd;"
+      insertafter: ssl_prefer_server_ciphers
+      state: present
+  become: true

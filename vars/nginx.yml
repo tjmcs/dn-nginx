@@ -1,0 +1,23 @@
+# (c) 2016 DataNexus Inc.  All Rights Reserved
+#
+# Defaults that are necessary for all deployments of
+# NGINX
+---
+application: nginx
+
+# the names of the interfaces to use for by the NGINX servers:
+#
+#  - the `data_iface` is the name of the private interface that is used to
+#    communicate with the services that NGINX may be proxying for
+#  - the `api_iface is the name of the interface that the NGINX servers
+#    listen on for connections from clients
+api_iface: "eth0"
+data_iface: "eth0"
+
+# defines the packages that must be installed for all NGINX nodes
+nginx_package_list: ["epel-release", "httpd-tools"]
+
+# these parameters are default values for the facts used when creating
+# accounts to use with the NGINX server(s)
+nginx_admin_user: admin
+nginx_power_user: power_user
