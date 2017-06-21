@@ -3,8 +3,6 @@
 # first, configure our NGINX instances as a cluster for
 # high-availability (only invoked if there is more than one instance)
 - set_fact:
-    ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
-    num_hosts: "{{nginx_nodes | length}}"
     api_addr: "{{api_addr.split('\n').0}}"
 - set_fact:
     nginx_node_priority: "{{(num_hosts | int) - (ngx_nodes.index(api_addr) | int)}}"

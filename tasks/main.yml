@@ -1,8 +1,13 @@
 # (c) 2016 DataNexus Inc.  All Rights Reserved
 ---
+- set_fact:
+    ngx_nodes: "{{nginx_nodes | map('extract', hostvars, [('ansible_' + api_iface), 'ipv4', 'address']) | list}}"
+    num_hosts: "{{(nginx_nodes + (existing_nodes | default([]))) | length}}"
 - include: install-nginx.yml static=no
-- include: set-nginx-active-passive.yml static=no
+- include: nginx-setup-active-passive.yml static=no
   when: ((nginx_nodes | default([])) | length) > 1
-- include: set-nginx-https-only.yml static=no
+- include: configure-nginx-server.yml static=no
+- include: nginx-enable-basic-auth.yml static=no
+  when: nginx_basic_auth | bool
 - include: enable-nginx-service.yml static=no
 - include: start-nginx-service.yml static=no
