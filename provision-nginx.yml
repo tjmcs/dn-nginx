@@ -26,7 +26,7 @@
 
 # And deploy NGINX to the nodes in the `nginx` host group; note that if
 # there is more than one node in the `nginx` host group, those nodes will be
-# configured as a Kafka cluster
+# configured as a NGINX cluster (in an active-passive configuration)
 - name: Install/configure NGINX server(s)
   hosts: nginx
   gather_facts: no
@@ -35,13 +35,11 @@
   vars:
     - combined_package_list: "{{ (default_packages|default([])) | union(nginx_package_list) | union((install_packages_by_tag|default({})).nginx|default([])) }}"
     - nginx_nodes: "{{groups['nginx']}}"
-  pre_tasks:
+  roles:
     # first, initialize the play by loading any `local_vars_file` that may have
     # been passed in, restarting the network on the target nodes (if desired),
     # and determining the `data_iface` and `api_iface` values from the input
     # `iface_description_array` (if one was passed in)
-    - include_role:
-        name: initialize-play
-  # now that we have all of the facts we need, provision the input nodes
-  roles:
+    - role: initialize-play
+    # now that we have all of the facts we need, provision the input nodes
     - role: provision-nodes

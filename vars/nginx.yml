@@ -6,7 +6,6 @@
 application: nginx
 
 # the names of the interfaces to use for by the NGINX servers:
-#
 #  - the `data_iface` is the name of the private interface that is used to
 #    communicate with the services that NGINX may be proxying for
 #  - the `api_iface is the name of the interface that the NGINX servers
@@ -21,3 +20,16 @@ nginx_package_list: ["epel-release", "httpd-tools"]
 # accounts to use with the NGINX server(s)
 nginx_admin_user: admin
 nginx_power_user: power_user
+
+# if set to true, this parameter can be used to secure the NGINX instance
+# via Basic Authentication
+nginx_basic_auth: false
+
+# if set, this parameter can be used to pass in a hash map of certificates
+# to use with the HTTPS interface (if not set, then self-signed certificates
+# will be generated)
+nginx_certificate_hash: {}
+
+# if set to true, then any HTTP requests received will be redirected as HTTPS
+# requests (set to true by default)
+nginx_https_only: false

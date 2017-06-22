@@ -31,7 +31,7 @@ no_ip_commands = ['version', 'global-status', '--help', '-h']
 single_ip_commands = ['status', 'ssh']
 # vagrant command arguments that indicate we are provisioning nodes
 provisioning_command_args = ['up', 'provision']
-no_zk_required_command_args = ['destroy']
+no_vip_required_command_args = ['destroy']
 not_provisioning_flag = ['--no-provision']
 
 optparse = OptionParser.new do |opts|
@@ -45,11 +45,54 @@ optparse = OptionParser.new do |opts|
     options[:addr_list] = addr_list.gsub(/^=/,'')
   end
 
+  options[:virtual_ip] = nil
+  opts.on( '-i', '--virtual-ip A1', 'Virtual IP address to use with keepalived' ) do |addr_list|
+    # while parsing, trim an '=' prefix character off the front of the string if it exists
+    # (would occur if the value was passed using an option flag like '-i=192.168.1.1')
+    options[:virtual_ip] = addr_list.gsub(/^=/,'')
+  end
+
+  options[:basic_auth] = nil
+  opts.on( '-b', '--basic-auth', 'If set, instances will be secured via Basic Authentication' ) do |basic_auth|
+    # set the corresponding option to true when included
+    options[:basic_auth] = true
+  end
+
+  options[:https_only] = nil
+  opts.on( '-o', '--https-only', 'If set, HTTP requets will be redirected as HTTPS requests' ) do |https_only|
+    # set the corresponding option to true when included
+    options[:https_only] = true
+  end
+
   options[:local_vars_file] = nil
   opts.on( '-f', '--local-vars-file FILE', 'Local variables file' ) do |local_vars_file|
     # while parsing, trim an '=' prefix character off the front of the string if it exists
     # (would occur if the value was passed using an option flag like '-f=/tmp/local-vars-file.yml')
     options[:local_vars_file] = local_vars_file.gsub(/^=/,'')
+  end
+
+  options[:yum_repo_url] = nil
+  opts.on( '-y', '--yum-url URL', 'Local yum repository URL' ) do |yum_repo_url|
+    # while parsing, trim an '=' prefix character off the front of the string if it exists
+    # (would occur if the value was passed using an option flag like '-y=http://192.168.1.128/centos')
+    options[:yum_repo_url] = yum_repo_url.gsub(/^=/,'')
+  end
+
+  options[:epel_repo_url] = nil
+  opts.on( '-e', '--epel-url URL', 'Local epel repository URL' ) do |epel_repo_url|
+    # while parsing, trim an '=' prefix character off the front of the string if it exists
+    # (would occur if the value was passed using an option flag like '-e=http://192.168.1.128/epel')
+    options[:epel_repo_url] = epel_repo_url.gsub(/^=/,'')
+  end
+
+  options[:reset_proxy_settings] = false
+  opts.on( '-c', '--clear-proxy-settings', 'Clear existing proxy settings if no proxy is set' ) do |reset_proxy_settings|
+    options[:reset_proxy_settings] = true
+  end
+
+  options[:reset_mirrors] = false
+  opts.on( '-r', '--reset-mirrors', 'Reset any local mirrors that are not specified' ) do |reset_mirrors|
+    options[:reset_mirrors] = true
   end
 
   opts.on_tail( '-h', '--help', 'Display this screen' ) do
@@ -77,6 +120,8 @@ provisioning_command = !((ARGV & provisioning_command_args).empty?) && (ARGV & n
 # and to see if multiple IP addresses are supported (or not) for the
 # command being invoked
 single_ip_command = !((ARGV & single_ip_commands).empty?)
+# and to see if a virtual IP address must also be provided
+no_vip_required_command = !(ARGV & no_vip_required_command_args).empty?
 
 # if a local variables file was passed in, check and make sure it's a valid filename
 if options[:local_vars_file] && !File.file?(options[:local_vars_file])
@@ -111,6 +156,18 @@ if provisioning_command || ip_required
           exit 2
         end
       end
+    end
+  end
+  # if more than one NGINX address was passed in, a virtual IP address is
+  # required to configure those NGINX nodes as an active-passive cluster
+  # using `keepalived`
+  if !no_vip_required_command && nginx_addr_array.size > 1
+    if !options[:virtual_ip]
+      print "ERROR; a virtual IP address must be supplied (using the `-i, --virtual-ip` flag) for multi-node clusters\n"
+      exit 1
+    elsif !(options[:virtual_ip] =~ Resolv::IPv4::Regex)
+      print "ERROR; input Virtual IP address #{nginx_addr_array[0]} is not a valid IP address\n"
+      exit 2
     end
   end
 end
@@ -166,8 +223,9 @@ if nginx_addr_array.size > 0
         # set, of course)
         if machine_addr == nginx_addr_array[-1]
           # now, use the playbook in the `provision-nginx.yml' file to
-          # provision our nodes with two Telegraf agents (and configure them
-          # to report the metrics they collect defined Kafka cluster)
+          # provision our nodes with NGINX (and configure them as an
+          # active-passive cluster using `keepalived` if there is more
+          # than one node)
           machine.vm.provision "ansible" do |ansible|
             ansible.limit = "all"
             ansible.playbook = "provision-nginx.yml"
@@ -184,10 +242,39 @@ if nginx_addr_array.size > 0
               data_iface: "eth1",
               api_iface: "eth1"
             }
+            # if defined, set the 'extra_vars[:nginx_virtual_ip]' value to the value that was passed
+            # in on the command-line (eg. "192.168.34.240")
+            if options[:virtual_ip]
+              ansible.extra_vars[:nginx_virtual_ip] = options[:virtual_ip]
+            end
             # if defined, set the 'extra_vars[:local_vars_file]' value to the value that was passed
             # in on the command-line (eg. "/tmp/local-vars.yml")
             if options[:local_vars_file]
               ansible.extra_vars[:local_vars_file] = options[:local_vars_file]
+            end
+            # if flag is set, set the 'extra_vars[:nginx_basic_auth]' value to true
+            if options[:basic_auth]
+              ansible.extra_vars[:nginx_basic_auth] = true
+            end
+            # if flag is set, set the 'extra_vars[:nginx_https_only]' value to true
+            if options[:https_only]
+              ansible.extra_vars[:nginx_https_only] = true
+            end
+            # set the `yum_repo_url` if a value for that parameter was included on the command-line
+            if options[:yum_repo_url]
+              ansible.extra_vars[:yum_repo_url] = options[:yum_repo_url]
+            end
+            # set the `epel_repo_url` if a value for that parameter was included on the command-line
+            if options[:epel_repo_url]
+              ansible.extra_vars[:epel_repo_url] = options[:epel_repo_url]
+            end
+            # set the `reset_proxy_settings` if that flag was included on the command-line
+            if options[:reset_proxy_settings]
+              ansible.extra_vars[:reset_proxy_settings] = options[:reset_proxy_settings]
+            end
+            # set the `reset_mirrors` if that flag was included on the command-line
+            if options[:reset_mirrors]
+              ansible.extra_vars[:reset_mirrors] = options[:reset_mirrors]
             end
           end
         end
