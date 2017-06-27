@@ -121,7 +121,7 @@ provisioning_command = !((ARGV & provisioning_command_args).empty?) && (ARGV & n
 # command being invoked
 single_ip_command = !((ARGV & single_ip_commands).empty?)
 # and to see if a virtual IP address must also be provided
-no_vip_required_command = !(ARGV & no_vip_required_command_args).empty?
+no_vip_required_command = !(ARGV & no_vip_required_command_args).empty? || !provisioning_command
 
 # if a local variables file was passed in, check and make sure it's a valid filename
 if options[:local_vars_file] && !File.file?(options[:local_vars_file])
@@ -214,10 +214,12 @@ if nginx_addr_array.size > 0
 
     nginx_addr_array.each do |machine_addr|
       config.vm.define machine_addr do |machine|
-        # Create a private network, which allows host-only access to the machine
+        # Create a two private networks, which each allow host-only access to the machine
         # using a specific IP.
-        # config.vm.network "private_network", ip: "192.168.33.10"
         machine.vm.network "private_network", ip: machine_addr
+        split_addr = machine_addr.split('.')
+        api_addr = (split_addr[0..1] + [(split_addr[2].to_i + 10).to_s] + [split_addr[3]]).join('.')
+        machine.vm.network "private_network", ip: api_addr
         # if it's the last node in the list if input addresses, then provision
         # all of the nodes simultaneously (if the `--no-provision` flag was not
         # set, of course)
@@ -240,7 +242,7 @@ if nginx_addr_array.size > 0
                 proxy_password: proxy_password
               },
               data_iface: "eth1",
-              api_iface: "eth1"
+              api_iface: "eth2"
             }
             # if defined, set the 'extra_vars[:nginx_virtual_ip]' value to the value that was passed
             # in on the command-line (eg. "192.168.34.240")
